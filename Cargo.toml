@@ -15,6 +15,8 @@ rayon = '1.5.1'
 serde_yaml = '0.8.24'
 rand='0.8.5'
 rand_distr='0.4.3'
+clap='3.2.5'
+itertools-num='0.1.3'
 
 [dependencies.serde]
 features = ['derive']
