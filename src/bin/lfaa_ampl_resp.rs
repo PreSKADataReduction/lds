@@ -1,6 +1,9 @@
 use progress_bar::*;
 
-use phased_array::{cfg::StationCfg, station::Station};
+use phased_array::{
+    cfg::StationCfg, station::Station
+    , utils::get_freq_to_sample
+};
 
 use std::{
     fs::create_dir_all, path::PathBuf
@@ -12,7 +15,7 @@ use rsdsp::oscillator::{CFreqScanner, COscillator};
 
 use ndarray_npy::write_npy;
 
-use ndarray::{Array1, Array2, Axis, parallel::prelude::*};
+use ndarray::{Array1, Array2, ArrayView1, Axis, parallel::prelude::*};
 
 use rand::{thread_rng, Rng};
 
@@ -35,31 +38,12 @@ fn main() {
                 .required(true),
         )
         .arg(
-            Arg::new("fmin_MHz")
-                .short('f')
-                .long("fmin")
-                .allow_hyphen_values(true)
-                .takes_value(true)
-                .value_name("freq in MHz")
-                .required(true),
-        )
-        .arg(
-            Arg::new("fmax_MHz")
-                .short('F')
-                .long("fmax")
-                .allow_hyphen_values(true)
-                .takes_value(true)
-                .value_name("freq in MHz")
-                .required(true),
-        )
-        .arg(
-            Arg::new("nfreq")
-                .short('n')
-                .long("nfreq")
-                .takes_value(true)
-                .value_name("nfreq")
-                .default_value("1024")
-                .required(false),
+            Arg::new("subdiv")
+            .short('s')
+            .long("subdiv")
+            .takes_value(true)
+            .value_name("divide fine channels into")
+            .default_value("2")
         )
         .arg(
             Arg::new("siglen")
@@ -131,24 +115,16 @@ fn main() {
 
     let station_cfg:StationCfg=from_reader(std::fs::File::open(matches.value_of("station_cfg").unwrap()).unwrap())
     .unwrap();
+    let station = Station::<Complex<f64>, f64>::from_cfg(&station_cfg);
 
-    let fmin_Hz = matches
-        .value_of("fmin_MHz")
-        .unwrap()
-        .parse::<f64>()
-        .unwrap()
-        * 1e6;
-    let fmax_Hz = matches
-        .value_of("fmax_MHz")
-        .unwrap()
-        .parse::<f64>()
-        .unwrap()
-        * 1e6;
+    let subdiv=matches.value_of("subdiv").unwrap().parse::<usize>().unwrap();
 
-    let omega_min = fmin_Hz * station_cfg.dt * 2.0 * std::f64::consts::PI;
-    let omega_max = fmax_Hz * station_cfg.dt * 2.0 * std::f64::consts::PI;
-    println!("{} {}", omega_min, omega_max);
-    let nfreq = matches.value_of("nfreq").unwrap().parse::<usize>().unwrap();
+    let freq_to_sample=get_freq_to_sample(&station, subdiv);
+
+    let omega_to_sample:Vec<_>=freq_to_sample.iter().map(|f| 2.0*f*std::f64::consts::PI).collect();
+
+    let nfreq=freq_to_sample.len();
+    
     let siglen = matches
         .value_of("siglen")
         .unwrap()
@@ -158,11 +134,8 @@ fn main() {
     let out_dir = std::path::PathBuf::from(matches.value_of("outdir").unwrap());
     create_dir_all(&out_dir).unwrap();
 
-    let bandwidth = (omega_max - omega_min) * std::f64::consts::PI;
-    let domega = bandwidth / (nfreq + 1) as f64;
-    let omegas = Vec::from(linspace(omega_min, omega_max - domega, nfreq).collect::<Vec<_>>());
 
-    let freqs=Array1::from_iter(linspace(fmin_Hz/1e6, fmax_Hz/1e6, nfreq));
+
 
     let az0 = matches
         .value_of("azimuth0")
@@ -207,21 +180,19 @@ fn main() {
 
     //let df = (f_max - f_min) / (n_freq - 1) as f64;
     //let mut result = Array2::<f64>::zeros((station_cfg.coarse_pfb.nch, nfreq));
-    let station = Station::<Complex<f64>, f64>::from_cfg(&station_cfg);
+    
     let digital_delay = station.calc_required_digital_delay(az0, ze0);
-
+    println!("{:?}", digital_delay);
     init_progress_bar(nfreq);
     set_progress_bar_action("Computing", Color::Blue, Style::Bold);
 
-    
-    println!("{:?}", digital_delay);
     coarse_resp
         .axis_iter_mut(Axis(1))
         .into_par_iter()
         .zip(fine_resp.axis_iter_mut(Axis(1)))
-        .zip(omegas.par_iter())
+        .zip(omega_to_sample.par_iter())
         .enumerate()
-        .for_each(|(i,  ( (mut coarse_resp1, mut fine_resp1), &omega))| {
+        .for_each(|(_i,  ( (mut coarse_resp1, mut fine_resp1), &omega))| {
             let mut station = Station::<Complex<f64>, f64>::from_cfg(&station_cfg);
             let mut osc = COscillator::new(0.0, omega);
             let mut n = 0;
@@ -253,6 +224,8 @@ fn main() {
             inc_progress_bar();
         });
 
+        finalize_progress_bar();
+
     println!("Done, dumping results");
     write_npy(out_dir.join("coarse.npy"), &coarse_resp).unwrap();
     write_npy(out_dir.join("fine.npy"), &fine_resp).unwrap();
@@ -262,40 +235,6 @@ fn main() {
 
     write_npy(out_dir.join("coarse_freq.npy"), &freq_coarse).unwrap();
     write_npy(out_dir.join("fine_freq.npy"), &freq_fine).unwrap();
-    write_npy(out_dir.join("freq.npy"), &freqs).unwrap();
-    /*
-
-    for (i, &omega) in omegas.iter().enumerate() {
-        println!("{} {}", i, omega);
-        let mut station = Station::<Complex<f64>, f64>::from_cfg(&station_cfg);
-
-        let digital_delay = station.calc_required_digital_delay(az0, ze0);
-
-        let mut sig_gen = COscillator::new(0.0, omega);
-
-
-
-        let mut n = 0;
-        let (coarse_data, fine_data) = loop {
-            let signal: Vec<_> = (0..siglen).map(|_| sig_gen.get()).collect();
-            let (coarse_data, fine_data) = station.acquire_fine(0.0, 0.0, &signal, &digital_delay);
-
-            n += 1;
-            if n == niter {
-                break (coarse_data, fine_data);
-            }
-        };
-
-        //println!("{:?}", fine_data.shape());
-        let coarse_resp1=coarse_data.mean_axis(Axis(1)).unwrap().map(|x| x.norm_sqr());
-        let fine_resp1=fine_data.mean_axis(Axis(1)).unwrap().map(|x| x.norm_sqr());
-        coarse_resp.column_mut(i).assign(&coarse_resp1.view());
-        fine_resp.column_mut(i).assign(&fine_resp1.view());
-    }
-
-
-    write_npy(out_dir.clone().join("coarse.npy"), &coarse_resp).unwrap();
-
-    write_npy(out_dir.join("fine.npy"), &fine_resp).unwrap();
-    */
+    write_npy(out_dir.join("freq.npy"), &ArrayView1::from(&freq_to_sample)).unwrap();
+    
 }
