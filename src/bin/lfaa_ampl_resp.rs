@@ -1,6 +1,10 @@
+use progress_bar::*;
+
 use phased_array::{cfg::StationCfg, station::Station};
 
-use std::{fs::create_dir_all, path::PathBuf};
+use std::{
+    fs::create_dir_all, path::PathBuf
+};
 
 use clap::{Arg, Command};
 
@@ -206,6 +210,9 @@ fn main() {
     let station = Station::<Complex<f64>, f64>::from_cfg(&station_cfg);
     let digital_delay = station.calc_required_digital_delay(az0, ze0);
 
+    init_progress_bar(nfreq);
+    set_progress_bar_action("Computing", Color::Blue, Style::Bold);
+
     
     println!("{:?}", digital_delay);
     coarse_resp
@@ -218,7 +225,7 @@ fn main() {
             let mut station = Station::<Complex<f64>, f64>::from_cfg(&station_cfg);
             let mut osc = COscillator::new(0.0, omega);
             let mut n = 0;
-            println!("{}/{}", i, nfreq);
+            //println!("{}/{}", i, nfreq);
             loop {
                 let signal: Vec<_> = (0..siglen).map(|_| osc.get()).collect();
                 //let channelized = station.ants[0].channelizer.analyze(&signal);
@@ -243,7 +250,10 @@ fn main() {
                     break;
                 }
             }
+            inc_progress_bar();
         });
+
+    println!("Done, dumping results");
     write_npy(out_dir.join("coarse.npy"), &coarse_resp).unwrap();
     write_npy(out_dir.join("fine.npy"), &fine_resp).unwrap();
 
