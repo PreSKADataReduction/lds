@@ -258,15 +258,15 @@ where
         //let src_dir=angle2xyz(azimuth, zenith);
         let signal=src.get_sig(self);
         self.ants
-            .par_iter_mut()
-            .zip(signal.into_par_iter())
-            .zip(digital_delay.par_iter())
+            .iter_mut()
+            .zip(signal.into_iter())
+            .zip(digital_delay.iter())
             .map(|((ant, signal1), &d)| {
                 let mut channelized = ant.acquire(&signal1, dt);
                 apply_delay(&mut channelized, d);
                 channelized
             })
-            .reduce_with(|a, b| a + b)
+            .reduce(|a, b| a + b)
             .unwrap()
         //self.synthesizer.synthesize(result.view())
     }
