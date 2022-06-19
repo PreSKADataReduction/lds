@@ -1,6 +1,6 @@
 use progress_bar::*;
 
-use phased_array::{
+use lds::{
     cfg::StationCfg, station::Station, station_src::GeneralSrcBuilder, utils::get_freq_to_sample,
 };
 

@@ -1,7 +1,5 @@
 use ndarray::{Array2, ArrayView1, ScalarOperand};
 
-use rayon::prelude::*;
-
 use std::{iter::Sum, ops::Mul};
 
 use num::{
@@ -12,8 +10,6 @@ use num::{
 use rsdsp::{
     csp_pfb::CspPfb,
     cspfb::Analyzer as CsPfb,
-    frac_delayer::cfg2delayer,
-    frac_delayer::{FracDelayer},
     ospfb::Analyzer as OsPfb,
     windowed_fir::pfb_coeff,
 };
@@ -75,7 +71,7 @@ where
         }
     }
 
-    pub fn acquire(&mut self, signal: &[R], dt: T) -> Array2<Complex<T>> {
+    pub fn acquire(&mut self, signal: &[R]) -> Array2<Complex<T>> {
         //let dc = angle2xyz(azimuth, zenith);
 
         /*
@@ -89,7 +85,7 @@ where
         */
         //println!("delay = {:?}", delay);
         //let delayed_signal = self.delayer.delay(signal, delay);
-        self.channelizer.analyze(&signal)
+        self.channelizer.analyze(signal)
     }
 }
 
@@ -135,16 +131,15 @@ where
         nfine_ch: usize,
         coeff_stage2: ArrayView1<T>,
         coarse_ch_selected: &[usize],
-        delayer: FracDelayer<T, R>,
         dt: T,
     ) -> Self {
         let ants: Vec<_> = pos
             .iter()
             .map(|pos| {
                 Antenna::new(
-                    pos.clone(),
+                    *pos,
                     ncoarse_ch,
-                    coeff_stage1.clone(),
+                    coeff_stage1,
                     //delayer.clone(),
                 )
             })
@@ -221,7 +216,6 @@ where
 
     pub fn gain(&self,f: &[T], fc: &[T], az:T, ze: T, az0: T, ze0: T)->Vec<Complex<T>>{
         let cdt=light_speed::<T>()*self.dt;
-        let freqs=self.fine_ch_freq_in_fs();
         let n=angle2xyz(az, ze);
         let n0=angle2xyz(az0, ze0);
 
@@ -254,7 +248,6 @@ where
         src: &mut dyn StationSrc<R, T>,
         digital_delay: &[T],
     ) -> Array2<Complex<T>> {
-        let dt = self.dt;
         //let src_dir=angle2xyz(azimuth, zenith);
         let signal=src.get_sig(self);
         self.ants
@@ -262,7 +255,7 @@ where
             .zip(signal.into_iter())
             .zip(digital_delay.iter())
             .map(|((ant, signal1), &d)| {
-                let mut channelized = ant.acquire(&signal1, dt);
+                let mut channelized = ant.acquire(&signal1);
                 apply_delay(&mut channelized, d);
                 channelized
             })
@@ -348,7 +341,6 @@ where
             })
             .collect();
 
-        let delayer = cfg2delayer(&cfg.delayer);
         Station::new(
             &pos,
             cfg.coarse_pfb.nch,
@@ -356,7 +348,6 @@ where
             cfg.fine_pfb.nch,
             ArrayView1::from(&coeff_fine),
             &coarse_ch_selected,
-            delayer,
             T::from(cfg.dt).unwrap(),
         )
     }

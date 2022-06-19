@@ -1,24 +1,16 @@
-use phased_array::{cfg::StationCfg, station::Station};
+use lds::{cfg::StationCfg, station::Station};
 
-use std::{fs::create_dir_all, path::PathBuf};
+use std::{fs::create_dir_all};
 
 use clap::{Arg, Command};
 
-use rsdsp::oscillator::{CFreqScanner, COscillator};
-
 use ndarray_npy::write_npy;
 
-use ndarray::{Array1, Array2, Axis, parallel::prelude::*};
-
-use rand::{thread_rng, Rng};
-
-use rand_distr::StandardNormal;
+use ndarray::{Array1};
 
 use num::complex::Complex;
 
 use serde_yaml::from_reader;
-
-use itertools_num::linspace;
 
 fn main() {
     let matches = Command::new("ampl_resp_2stages")

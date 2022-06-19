@@ -1,12 +1,10 @@
 use num::{traits::FloatConst, Complex, Float};
 
-use rayon::prelude::*;
-
 use std::{fmt::Debug, iter::Sum};
 
 use crate::{
     constants::light_speed,
-    station::{Antenna, Station},
+    station::{Station},
     utils::{angle2xyz, dot},
 };
 use rsdsp::{frac_delayer::FracDelayer, oscillator::COscillator};

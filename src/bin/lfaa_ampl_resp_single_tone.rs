@@ -1,14 +1,12 @@
 use progress_bar::*;
 
-use phased_array::{
-    cfg::StationCfg, station::Station, station_src::GeneralSrcBuilder, station_src::SingleTone, utils::get_freq_to_sample,
+use lds::{
+    cfg::StationCfg, station::Station, station_src::SingleTone, utils::get_freq_to_sample,
 };
 
 use std::fs::create_dir_all;
 
 use clap::{Arg, Command};
-
-use rsdsp::oscillator::COscillator;
 
 use ndarray_npy::write_npy;
 
@@ -202,11 +200,9 @@ fn main() {
 
             let mut src=SingleTone::new(&station, az, ze, omega, siglen);
 
-            let mut osc = COscillator::new(0.0, omega);
             let mut n = 0;
             //println!("{}/{}", i, nfreq);
             loop {
-                let signal: Vec<_> = (0..siglen).map(|_| osc.get()).collect();
                 //let channelized = station.ants[0].channelizer.analyze(&signal);
                 //let (coarse1, fine1) = station.acquire_fine(az, ze, &signal, &digital_delay);
                 
