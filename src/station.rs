@@ -13,7 +13,7 @@ use rsdsp::{
     csp_pfb::CspPfb,
     cspfb::Analyzer as CsPfb,
     frac_delayer::cfg2delayer,
-    frac_delayer::{FracDelayer, ToDelayValue},
+    frac_delayer::{FracDelayer},
     ospfb::Analyzer as OsPfb,
     windowed_fir::pfb_coeff,
 };
@@ -22,6 +22,7 @@ use crate::{
     cfg::StationCfg,
     constants::light_speed,
     utils::{angle2xyz, apply_delay, dot},
+    station_src::StationSrc,
 };
 
 use rustfft::FftNum;
@@ -34,7 +35,7 @@ where
 {
     pub pos: [T; 3],
     pub channelizer: OsPfb<R, T>,
-    pub delayer: FracDelayer<T, R>,
+    //pub delayer: FracDelayer<T, R>,
 }
 
 impl<R, T> Antenna<R, T>
@@ -64,29 +65,31 @@ where
         pos: [T; 3],
         ncoarse_ch: usize,
         coeff: ArrayView1<T>,
-        delayer: FracDelayer<T, R>,
+        //delayer: FracDelayer<T, R>,
     ) -> Self {
         let channelizer = OsPfb::new(ncoarse_ch, coeff);
         Antenna {
             pos,
             channelizer,
-            delayer,
+            //delayer,
         }
     }
 
-    pub fn acquire(&mut self, azimuth: T, zenith: T, signal: &[R], dt: T) -> Array2<Complex<T>> {
-        let dc = angle2xyz(azimuth, zenith);
+    pub fn acquire(&mut self, signal: &[R], dt: T) -> Array2<Complex<T>> {
+        //let dc = angle2xyz(azimuth, zenith);
 
-        let delay = -dc
+        /*
+        let delay = -src_dir
             .iter()
             .zip(self.pos.iter())
             .map(|(&x, &y)| x * y)
             .sum::<T>()
             / light_speed::<T>()
             / dt;
+        */
         //println!("delay = {:?}", delay);
-        let delayed_signal = self.delayer.delay(signal, delay);
-        self.channelizer.analyze(&delayed_signal)
+        //let delayed_signal = self.delayer.delay(signal, delay);
+        self.channelizer.analyze(&signal)
     }
 }
 
@@ -142,7 +145,7 @@ where
                     pos.clone(),
                     ncoarse_ch,
                     coeff_stage1.clone(),
-                    delayer.clone(),
+                    //delayer.clone(),
                 )
             })
             .collect();
@@ -248,18 +251,18 @@ where
 
     pub fn acquire(
         &mut self,
-        azimuth: T,
-        zenith: T,
-        signal: &[R],
+        src: &mut dyn StationSrc<R, T>,
         digital_delay: &[T],
     ) -> Array2<Complex<T>> {
         let dt = self.dt;
-
+        //let src_dir=angle2xyz(azimuth, zenith);
+        let signal=src.get_sig(self);
         self.ants
             .par_iter_mut()
+            .zip(signal.into_par_iter())
             .zip(digital_delay.par_iter())
-            .map(|(ant, &d)| {
-                let mut channelized = ant.acquire(azimuth, zenith, signal, dt);
+            .map(|((ant, signal1), &d)| {
+                let mut channelized = ant.acquire(&signal1, dt);
                 apply_delay(&mut channelized, d);
                 channelized
             })
@@ -270,12 +273,10 @@ where
 
     pub fn acquire_fine(
         &mut self,
-        azimuth: T,
-        zenith: T,
-        signal: &[R],
+        src: &mut dyn StationSrc<R, T>,
         digital_delay: &[T],
     ) -> (Array2<Complex<T>>, Array2<Complex<T>>) {
-        let coarse_data = self.acquire(azimuth, zenith, signal, digital_delay);
+        let coarse_data = self.acquire(src, digital_delay);
         let fine_data = self.csp_pfb.analyze(coarse_data.view());
         (coarse_data, fine_data)
     }
