@@ -31,7 +31,7 @@ where
     }
 }
 
-pub fn get_freq_to_sample<R, T>(station: &Station<R, T>, subdiv: usize)->Vec<T>
+pub fn get_freq_to_sample<R, T>(station: &Station<R, T>, subdiv: usize) -> Vec<T>
 where
     T: Float
         + ScalarOperand

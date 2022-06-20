@@ -8,17 +8,14 @@ use num::{
 };
 
 use rsdsp::{
-    csp_pfb::CspPfb,
-    cspfb::Analyzer as CsPfb,
-    ospfb::Analyzer as OsPfb,
-    windowed_fir::pfb_coeff,
+    csp_pfb::CspPfb, cspfb::Analyzer as CsPfb, ospfb::Analyzer as OsPfb, windowed_fir::pfb_coeff,
 };
 
 use crate::{
     cfg::StationCfg,
     constants::light_speed,
-    utils::{angle2xyz, apply_delay, dot},
     station_src::StationSrc,
+    utils::{angle2xyz, apply_delay, dot},
 };
 
 use rustfft::FftNum;
@@ -151,7 +148,7 @@ where
         Station { ants, dt, csp_pfb }
     }
 
-    pub fn ncoarse_ch(&self)->usize{
+    pub fn ncoarse_ch(&self) -> usize {
         self.ants[0].channelizer.nch_total()
     }
 
@@ -185,61 +182,76 @@ where
             .collect()
     }
 
-    pub fn fine_ch_freq_in_fs(&self)->Vec<T>{
-        let nfine_per_coarse=self.csp_pfb.nfine_per_coarse();
+    pub fn fine_ch_freq_in_fs(&self) -> Vec<T> {
+        let nfine_per_coarse = self.csp_pfb.nfine_per_coarse();
         let ncoarse_ch = self.ants[0].channelizer.nch_total();
-        let coarse_ch_spacing=T::from(1).unwrap()/T::from(ncoarse_ch).unwrap();
-        let mut result=vec![];
-        
-        for fc in self.coarse_ch_freq_in_fs(&self.csp_pfb.coarse_ch_selected){
-            for f in 0..nfine_per_coarse{
+        let coarse_ch_spacing = T::from(1).unwrap() / T::from(ncoarse_ch).unwrap();
+        let mut result = vec![];
+
+        for fc in self.coarse_ch_freq_in_fs(&self.csp_pfb.coarse_ch_selected) {
+            for f in 0..nfine_per_coarse {
                 result.push(
-                    fc
-                    +(
-                        T::from(f).unwrap()-T::from(nfine_per_coarse-1).unwrap()/T::from(2).unwrap())/T::from(nfine_per_coarse).unwrap()*coarse_ch_spacing
-                    );
+                    fc + (T::from(f).unwrap()
+                        - T::from(nfine_per_coarse - 1).unwrap() / T::from(2).unwrap())
+                        / T::from(nfine_per_coarse).unwrap()
+                        * coarse_ch_spacing,
+                );
             }
         }
         result
     }
 
-    pub fn coarse_freq_of_fine_ch_in_fs(&self)->Vec<T>{
-        let nfine_per_coarse=self.csp_pfb.nfine_per_coarse();
-        let mut result=vec![];        
-        for fc in self.coarse_ch_freq_in_fs(&self.csp_pfb.coarse_ch_selected){
-            for _ in 0..nfine_per_coarse{
+    pub fn coarse_freq_of_fine_ch_in_fs(&self) -> Vec<T> {
+        let nfine_per_coarse = self.csp_pfb.nfine_per_coarse();
+        let mut result = vec![];
+        for fc in self.coarse_ch_freq_in_fs(&self.csp_pfb.coarse_ch_selected) {
+            for _ in 0..nfine_per_coarse {
                 result.push(fc);
             }
         }
         result
     }
 
-    pub fn gain(&self,f: &[T], fc: &[T], az:T, ze: T, az0: T, ze0: T)->Vec<Complex<T>>{
-        let cdt=light_speed::<T>()*self.dt;
-        let n=angle2xyz(az, ze);
-        let n0=angle2xyz(az0, ze0);
+    pub fn gain(&self, f: &[T], fc: &[T], az: T, ze: T, az0: T, ze0: T) -> Vec<Complex<T>> {
+        let cdt = light_speed::<T>() * self.dt;
+        let n = angle2xyz(az, ze);
+        let n0 = angle2xyz(az0, ze0);
 
-        let pos:Vec<_>=self.ants.iter().map(|a| a.pos).collect();
+        let pos: Vec<_> = self.ants.iter().map(|a| a.pos).collect();
 
-        let (nx, n0x): (Vec<T>, Vec<T>)=pos.iter().map(|p|{
-            let nx=dot(&n, p)/cdt;
-            let n0x=dot(&n0, p)/cdt;
-            (nx, n0x)
-        }).unzip();
-        f.iter().zip(fc.iter()).map(|(&f1, &fc1)|{
-            nx.iter().zip(n0x.iter()).map(|(&nx1, &n0x1)| Complex::<T>::new(T::zero(), T::from(2).unwrap()*T::PI()*(f1*nx1-fc1*n0x1)).exp()).sum::<Complex<T>>()
-        }).collect()
-
+        let (nx, n0x): (Vec<T>, Vec<T>) = pos
+            .iter()
+            .map(|p| {
+                let nx = dot(&n, p) / cdt;
+                let n0x = dot(&n0, p) / cdt;
+                (nx, n0x)
+            })
+            .unzip();
+        f.iter()
+            .zip(fc.iter())
+            .map(|(&f1, &fc1)| {
+                nx.iter()
+                    .zip(n0x.iter())
+                    .map(|(&nx1, &n0x1)| {
+                        Complex::<T>::new(
+                            T::zero(),
+                            T::from(2).unwrap() * T::PI() * (f1 * nx1 - fc1 * n0x1),
+                        )
+                        .exp()
+                    })
+                    .sum::<Complex<T>>()
+            })
+            .collect()
     }
 
-    pub fn gain_ideal(&self, az: T, ze: T, az0: T, ze0: T)->Vec<Complex<T>>{
-        let f=self.fine_ch_freq_in_fs();
+    pub fn gain_ideal(&self, az: T, ze: T, az0: T, ze0: T) -> Vec<Complex<T>> {
+        let f = self.fine_ch_freq_in_fs();
         self.gain(&f, &f, az, ze, az0, ze0)
     }
 
-    pub fn gain_2stage(&self, az: T, ze: T, az0: T, ze0: T)->Vec<Complex<T>>{
-        let f=self.fine_ch_freq_in_fs();
-        let fc=self.coarse_freq_of_fine_ch_in_fs();
+    pub fn gain_2stage(&self, az: T, ze: T, az0: T, ze0: T) -> Vec<Complex<T>> {
+        let f = self.fine_ch_freq_in_fs();
+        let fc = self.coarse_freq_of_fine_ch_in_fs();
         self.gain(&f, &fc, az, ze, az0, ze0)
     }
 
@@ -249,7 +261,7 @@ where
         digital_delay: &[T],
     ) -> Array2<Complex<T>> {
         //let src_dir=angle2xyz(azimuth, zenith);
-        let signal=src.get_sig(self);
+        let signal = src.get_sig(self);
         self.ants
             .iter_mut()
             .zip(signal.into_iter())

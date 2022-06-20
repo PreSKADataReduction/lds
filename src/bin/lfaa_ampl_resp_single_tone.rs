@@ -1,8 +1,6 @@
 use progress_bar::*;
 
-use lds::{
-    cfg::StationCfg, station::Station, station_src::SingleTone, utils::get_freq_to_sample,
-};
+use lds::{cfg::StationCfg, station::Station, station_src::SingleTone, utils::get_freq_to_sample};
 
 use std::fs::create_dir_all;
 
@@ -12,9 +10,14 @@ use ndarray_npy::write_npy;
 
 use ndarray::{parallel::prelude::*, Array1, Array2, ArrayView1, Axis};
 
-use num::complex::Complex;
+use num::{
+    complex::Complex
+    , traits::FloatConst
+};
 
 use serde_yaml::from_reader;
+
+type FloatType=f64;
 
 fn main() {
     let matches = Command::new("ampl_resp_2stages")
@@ -92,6 +95,14 @@ fn main() {
                 .value_name("ze in deg")
                 .required(true),
         )
+        .arg(
+            Arg::new("pre-ant-delay")
+                .short('d')
+                .long("delay")
+                .takes_value(true)
+                .value_name("delay file")
+                .required(false),
+        )
         .get_matches();
 
     /*
@@ -104,7 +115,15 @@ fn main() {
     let station_cfg: StationCfg =
         from_reader(std::fs::File::open(matches.value_of("station_cfg").unwrap()).unwrap())
             .unwrap();
-    let station = Station::<Complex<f64>, f64>::from_cfg(&station_cfg);
+    let station = Station::<Complex<FloatType>, FloatType>::from_cfg(&station_cfg);
+
+    let delays=match matches.value_of("pre-ant-delay"){
+        Some(value)=>{
+            from_reader(std::fs::File::open(value).unwrap()).unwrap()
+        }
+        None=>vec![0.0; station.ants.len()]
+    };
+
 
     let subdiv = matches
         .value_of("subdiv")
@@ -116,7 +135,7 @@ fn main() {
 
     let omega_to_sample: Vec<_> = freq_to_sample
         .iter()
-        .map(|f| 2.0 * f * std::f64::consts::PI)
+        .map(|f| 2.0 * f * FloatType::PI())
         .collect();
 
     let nfreq = freq_to_sample.len();
@@ -133,33 +152,31 @@ fn main() {
     let az0 = matches
         .value_of("azimuth0")
         .unwrap()
-        .parse::<f64>()
+        .parse::<FloatType>()
         .unwrap()
         .to_radians();
     let ze0 = matches
         .value_of("zenith0")
         .unwrap()
-        .parse::<f64>()
+        .parse::<FloatType>()
         .unwrap()
         .to_radians();
 
     let az = matches
         .value_of("azimuth")
         .unwrap()
-        .parse::<f64>()
+        .parse::<FloatType>()
         .unwrap()
         .to_radians();
     let ze = matches
         .value_of("zenith")
         .unwrap()
-        .parse::<f64>()
+        .parse::<FloatType>()
         .unwrap()
         .to_radians();
 
-    
-
-    let mut coarse_resp = Array2::<f64>::zeros((station_cfg.coarse_pfb.nch, nfreq));
-    let mut fine_resp = Array2::<f64>::zeros((station_cfg.total_nfine_ch(), nfreq));
+    let mut coarse_resp = Array2::<FloatType>::zeros((station_cfg.coarse_pfb.nch, nfreq));
+    let mut fine_resp = Array2::<FloatType>::zeros((station_cfg.total_nfine_ch(), nfreq));
 
     println!("{:?}", fine_resp.shape());
 
@@ -172,8 +189,8 @@ fn main() {
     //let o_min = 0.0;
     //let n_freq = 1024;
 
-    //let df = (f_max - f_min) / (n_freq - 1) as f64;
-    //let mut result = Array2::<f64>::zeros((station_cfg.coarse_pfb.nch, nfreq));
+    //let df = (f_max - f_min) / (n_freq - 1) as FloatType;
+    //let mut result = Array2::<FloatType>::zeros((station_cfg.coarse_pfb.nch, nfreq));
 
     let digital_delay = station.calc_required_digital_delay(az0, ze0);
     println!("{:?}", digital_delay);
@@ -187,7 +204,7 @@ fn main() {
         .zip(omega_to_sample.par_iter())
         .enumerate()
         .for_each(|(_i, ((mut coarse_resp1, mut fine_resp1), &omega))| {
-            let mut station = Station::<Complex<f64>, f64>::from_cfg(&station_cfg);
+            let mut station = Station::<Complex<FloatType>, FloatType>::from_cfg(&station_cfg);
 
             /*
             let mut src_builder = GeneralSrcBuilder::new(
@@ -198,14 +215,14 @@ fn main() {
                 station_cfg.delayer.half_tap,
             );*/
 
-            let mut src=SingleTone::new(&station, az, ze, omega, siglen);
+            let mut src = SingleTone::new(&station, az, ze, omega, siglen).with_delay(&delays);
 
             let mut n = 0;
             //println!("{}/{}", i, nfreq);
             loop {
                 //let channelized = station.ants[0].channelizer.analyze(&signal);
                 //let (coarse1, fine1) = station.acquire_fine(az, ze, &signal, &digital_delay);
-                
+
                 //let mut src=src_builder.build(&signal);
                 let (coarse1, fine1) = station.acquire_fine(&mut src, &digital_delay);
 

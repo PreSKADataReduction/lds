@@ -4,7 +4,7 @@ use std::{fmt::Debug, iter::Sum};
 
 use crate::{
     constants::light_speed,
-    station::{Station},
+    station::Station,
     utils::{angle2xyz, dot},
 };
 use rsdsp::{frac_delayer::FracDelayer, oscillator::COscillator};
@@ -22,9 +22,9 @@ where
     T: std::fmt::Debug + Float,
 {
     pub osc: COscillator<T>,
-    pub phases: Vec<T>,
     pub src_dir: [T; 3],
     pub sig_len: usize,
+    pub intrinsic_delay_pt: Vec<T>,
 }
 
 impl<T> SingleTone<T>
@@ -43,10 +43,15 @@ where
                 phi: T::zero(),
                 dphi_dpt: omega,
             },
-            phases: vec![T::zero(); station.ants.len()],
             src_dir: angle2xyz(az, ze),
             sig_len,
+            intrinsic_delay_pt: vec![T::zero(); station.ants.len()],
         }
+    }
+
+    pub fn with_delay(mut self, delay: &[T])->Self{
+        self.intrinsic_delay_pt.copy_from_slice(delay);
+        self
     }
 }
 
@@ -59,9 +64,10 @@ where
         station
             .ants
             .iter()
-            .map(|a| {
+            .zip(self.intrinsic_delay_pt.iter())
+            .map(|(a, &d)| {
                 let nx = dot(&a.pos, &self.src_dir) / light_speed() / station.dt;
-                let phase_factor = Complex::<T>::new(T::zero(), nx * self.osc.dphi_dpt).exp();
+                let phase_factor = Complex::<T>::new(T::zero(), (nx - d) * self.osc.dphi_dpt).exp();
                 signal.iter().map(|&x| phase_factor * x).collect::<Vec<_>>()
             })
             .collect()
@@ -81,10 +87,8 @@ pub struct GeneralSrc<R>
 where
     R: Debug,
 {
-    pub signal: Vec<Vec<R>>
+    pub signal: Vec<Vec<R>>,
 }
-
-
 
 impl<R, T> GeneralSrcBuilder<R, T>
 where
@@ -125,19 +129,22 @@ where
         Self { delayers, delays }
     }
 
-    pub fn build(&mut self, sig: &[R])->GeneralSrc<R>{
-        let signal=self.delayers.iter_mut().zip(self.delays.iter()).map(|(delayer, &delay)|{
-            delayer.delay(sig, delay)
-        }).collect();
-        GeneralSrc{
-            signal
-        }
+    pub fn build(&mut self, sig: &[R]) -> GeneralSrc<R> {
+        let signal = self
+            .delayers
+            .iter_mut()
+            .zip(self.delays.iter())
+            .map(|(delayer, &delay)| delayer.delay(sig, delay))
+            .collect();
+        GeneralSrc { signal }
     }
 }
 
 impl<R, T> StationSrc<R, T> for GeneralSrc<R>
-where R: Debug+Clone,
-T: Debug+Float{
+where
+    R: Debug + Clone,
+    T: Debug + Float,
+{
     fn get_sig(&mut self, _: &Station<R, T>) -> Vec<Vec<R>> {
         self.signal.clone()
     }

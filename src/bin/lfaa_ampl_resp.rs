@@ -158,8 +158,6 @@ fn main() {
         .unwrap()
         .to_radians();
 
-    
-
     let mut coarse_resp = Array2::<f64>::zeros((station_cfg.coarse_pfb.nch, nfreq));
     let mut fine_resp = Array2::<f64>::zeros((station_cfg.total_nfine_ch(), nfreq));
 
@@ -204,8 +202,8 @@ fn main() {
                 let signal: Vec<_> = (0..siglen).map(|_| osc.get()).collect();
                 //let channelized = station.ants[0].channelizer.analyze(&signal);
                 //let (coarse1, fine1) = station.acquire_fine(az, ze, &signal, &digital_delay);
-                
-                let mut src=src_builder.build(&signal);
+
+                let mut src = src_builder.build(&signal);
                 let (coarse1, fine1) = station.acquire_fine(&mut src, &digital_delay);
 
                 n += 1;
