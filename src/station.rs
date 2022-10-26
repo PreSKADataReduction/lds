@@ -57,7 +57,7 @@ where
     pub fn new(
         pos: [T; 3],
         ncoarse_ch: usize,
-        coeff: ArrayView1<T>,
+        coeff: &[T],
         //delayer: FracDelayer<T, R>,
     ) -> Self {
         let channelizer = OsPfb::new(ncoarse_ch, coeff);
@@ -124,9 +124,9 @@ where
     pub fn new(
         pos: &[[T; 3]],
         ncoarse_ch: usize,
-        coeff_stage1: ArrayView1<T>,
+        coeff_stage1: &[T],
         nfine_ch: usize,
-        coeff_stage2: ArrayView1<T>,
+        coeff_stage2: &[T],
         coarse_ch_selected: &[usize],
         dt: T,
     ) -> Self {
@@ -356,9 +356,9 @@ where
         Station::new(
             &pos,
             cfg.coarse_pfb.nch,
-            ArrayView1::from(&coeff_coarse),
+            &coeff_coarse,
             cfg.fine_pfb.nch,
-            ArrayView1::from(&coeff_fine),
+            &coeff_fine,
             &coarse_ch_selected,
             T::from(cfg.dt).unwrap(),
         )
