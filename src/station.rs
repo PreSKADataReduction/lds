@@ -1,4 +1,4 @@
-use ndarray::{Array2, ArrayView1, ScalarOperand};
+use ndarray::{Array2, ScalarOperand};
 
 use std::{iter::Sum, ops::Mul};
 
@@ -264,7 +264,7 @@ where
         let signal = src.get_sig(self);
         self.ants
             .iter_mut()
-            .zip(signal.into_iter())
+            .zip(signal)
             .zip(digital_delay.iter())
             .map(|((ant, signal1), &d)| {
                 let mut channelized = ant.acquire(&signal1);

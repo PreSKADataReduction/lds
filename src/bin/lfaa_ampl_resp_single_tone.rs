@@ -4,132 +4,75 @@ use lds::{cfg::StationCfg, station::Station, station_src::SingleTone, utils::get
 
 use std::fs::create_dir_all;
 
-use clap::{Arg, Command};
+use clap::Parser;
 
 use ndarray_npy::write_npy;
 
 use ndarray::{parallel::prelude::*, Array1, Array2, ArrayView1, Axis};
 
-use num::{
-    complex::Complex
-    , traits::FloatConst
-};
+use num::{complex::Complex, traits::FloatConst};
 
 use serde_yaml::from_reader;
 
-type FloatType=f64;
+type FloatType = f64;
+
+#[derive(Debug, Parser)]
+#[clap(author, about, version)]
+struct Args {
+    #[clap(short('c'), long("cfg"), value_name("config file"))]
+    station_cfg: String,
+
+    #[clap(
+        short('s'),
+        long("subdiv"),
+        value_name("divid fine channels into"),
+        default_value("2")
+    )]
+    subdiv: usize,
+
+    #[clap(
+        short('l'),
+        long("siglen"),
+        value_name("signal length in pt"),
+        default_value("65536")
+    )]
+    siglen: usize,
+
+    #[clap(short('t'), long("niter"), value_name("niter"), default_value("2"))]
+    niter: usize,
+
+    #[clap(short('o'), long("out"), value_name("output dir name"))]
+    outdir: String,
+
+    #[clap(short('A'), long("az0"), value_name("az0 in deg"))]
+    azimuth0: FloatType,
+
+    #[clap(short('Z'), long("zenith0"), value_name("ze0 in deg"))]
+    zenith0: FloatType,
+
+    #[clap(short('a'), long("az"), value_name("az in deg"))]
+    azimuth: FloatType,
+
+    #[clap(short('z'), long("zenith"), value_name("ze in deg"))]
+    zenith: FloatType,
+
+    #[clap(short('d'), long("delay"), value_name("delay file"))]
+    pre_ant_delay: Option<String>,
+}
 
 fn main() {
-    let matches = Command::new("ampl_resp_2stages")
-        .arg(
-            Arg::new("station_cfg")
-                .short('c')
-                .long("cfg")
-                .takes_value(true)
-                .value_name("config file")
-                .required(true),
-        )
-        .arg(
-            Arg::new("subdiv")
-                .short('s')
-                .long("subdiv")
-                .takes_value(true)
-                .value_name("divide fine channels into")
-                .default_value("2"),
-        )
-        .arg(
-            Arg::new("siglen")
-                .short('l')
-                .long("siglen")
-                .takes_value(true)
-                .value_name("signal length in pt")
-                .required(false)
-                .default_value("65536"),
-        )
-        .arg(
-            Arg::new("niter")
-                .short('t')
-                .long("niter")
-                .takes_value(true)
-                .value_name("niter")
-                .default_value("2")
-                .required(false),
-        )
-        .arg(
-            Arg::new("outdir")
-                .short('o')
-                .long("out")
-                .takes_value(true)
-                .value_name("output dir name")
-                .required(true),
-        )
-        .arg(
-            Arg::new("azimuth0")
-                .short('A')
-                .long("az0")
-                .takes_value(true)
-                .value_name("az0 in deg")
-                .required(true),
-        )
-        .arg(
-            Arg::new("zenith0")
-                .short('Z')
-                .long("ze0")
-                .takes_value(true)
-                .value_name("ze0 in deg")
-                .required(true),
-        )
-        .arg(
-            Arg::new("azimuth")
-                .short('a')
-                .long("az")
-                .takes_value(true)
-                .value_name("az in deg")
-                .required(true),
-        )
-        .arg(
-            Arg::new("zenith")
-                .short('z')
-                .long("ze")
-                .takes_value(true)
-                .value_name("ze in deg")
-                .required(true),
-        )
-        .arg(
-            Arg::new("pre-ant-delay")
-                .short('d')
-                .long("delay")
-                .takes_value(true)
-                .value_name("delay file")
-                .required(false),
-        )
-        .get_matches();
-
-    /*
-    let station_cfg = StationCfg {
-        pos: vec![[0., 0., 0.]],..
-        from_reader(std::fs::File::open(matches.value_of("station_cfg").unwrap()).unwrap())
-            .unwrap()
-    }; */
+    let args = Args::parse();
 
     let station_cfg: StationCfg =
-        from_reader(std::fs::File::open(matches.value_of("station_cfg").unwrap()).unwrap())
-            .unwrap();
+        from_reader(std::fs::File::open(args.station_cfg).unwrap()).unwrap();
     let station = Station::<Complex<FloatType>, FloatType>::from_cfg(&station_cfg);
 
-    let delays=match matches.value_of("pre-ant-delay"){
-        Some(value)=>{
-            from_reader(std::fs::File::open(value).unwrap()).unwrap()
-        }
-        None=>vec![0.0; station.ants.len()]
+    let delays = match args.pre_ant_delay {
+        Some(value) => from_reader(std::fs::File::open(value).unwrap()).unwrap(),
+        None => vec![0.0; station.ants.len()],
     };
 
-
-    let subdiv = matches
-        .value_of("subdiv")
-        .unwrap()
-        .parse::<usize>()
-        .unwrap();
+    let subdiv = args.subdiv;
 
     let freq_to_sample = get_freq_to_sample(&station, subdiv);
 
@@ -140,40 +83,16 @@ fn main() {
 
     let nfreq = freq_to_sample.len();
 
-    let siglen = matches
-        .value_of("siglen")
-        .unwrap()
-        .parse::<usize>()
-        .unwrap();
-    let niter = matches.value_of("niter").unwrap().parse::<usize>().unwrap();
-    let out_dir = std::path::PathBuf::from(matches.value_of("outdir").unwrap());
+    let siglen = args.siglen;
+    let niter = args.niter;
+    let out_dir = std::path::PathBuf::from(args.outdir);
     create_dir_all(&out_dir).unwrap();
 
-    let az0 = matches
-        .value_of("azimuth0")
-        .unwrap()
-        .parse::<FloatType>()
-        .unwrap()
-        .to_radians();
-    let ze0 = matches
-        .value_of("zenith0")
-        .unwrap()
-        .parse::<FloatType>()
-        .unwrap()
-        .to_radians();
+    let az0 = args.azimuth0.to_radians();
+    let ze0 = args.zenith0.to_radians();
 
-    let az = matches
-        .value_of("azimuth")
-        .unwrap()
-        .parse::<FloatType>()
-        .unwrap()
-        .to_radians();
-    let ze = matches
-        .value_of("zenith")
-        .unwrap()
-        .parse::<FloatType>()
-        .unwrap()
-        .to_radians();
+    let az = args.azimuth.to_radians();
+    let ze = args.zenith.to_radians();
 
     let mut coarse_resp = Array2::<FloatType>::zeros((station_cfg.coarse_pfb.nch, nfreq));
     let mut fine_resp = Array2::<FloatType>::zeros((station_cfg.total_nfine_ch(), nfreq));

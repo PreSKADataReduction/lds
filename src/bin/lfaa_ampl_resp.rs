@@ -6,7 +6,7 @@ use lds::{
 
 use std::fs::create_dir_all;
 
-use clap::{Arg, Command};
+use clap::Parser;
 
 use rsdsp::oscillator::COscillator;
 
@@ -18,84 +18,51 @@ use num::complex::Complex;
 
 use serde_yaml::from_reader;
 
-fn main() {
-    let matches = Command::new("ampl_resp_2stages")
-        .arg(
-            Arg::new("station_cfg")
-                .short('c')
-                .long("cfg")
-                .takes_value(true)
-                .value_name("config file")
-                .required(true),
-        )
-        .arg(
-            Arg::new("subdiv")
-                .short('s')
-                .long("subdiv")
-                .takes_value(true)
-                .value_name("divide fine channels into")
-                .default_value("2"),
-        )
-        .arg(
-            Arg::new("siglen")
-                .short('l')
-                .long("siglen")
-                .takes_value(true)
-                .value_name("signal length in pt")
-                .required(false)
-                .default_value("65536"),
-        )
-        .arg(
-            Arg::new("niter")
-                .short('t')
-                .long("niter")
-                .takes_value(true)
-                .value_name("niter")
-                .default_value("2")
-                .required(false),
-        )
-        .arg(
-            Arg::new("outdir")
-                .short('o')
-                .long("out")
-                .takes_value(true)
-                .value_name("output dir name")
-                .required(true),
-        )
-        .arg(
-            Arg::new("azimuth0")
-                .short('A')
-                .long("az0")
-                .takes_value(true)
-                .value_name("az0 in deg")
-                .required(true),
-        )
-        .arg(
-            Arg::new("zenith0")
-                .short('Z')
-                .long("ze0")
-                .takes_value(true)
-                .value_name("ze0 in deg")
-                .required(true),
-        )
-        .arg(
-            Arg::new("azimuth")
-                .short('a')
-                .long("az")
-                .takes_value(true)
-                .value_name("az in deg")
-                .required(true),
-        )
-        .arg(
-            Arg::new("zenith")
-                .short('z')
-                .long("ze")
-                .takes_value(true)
-                .value_name("ze in deg")
-                .required(true),
-        )
-        .get_matches();
+type FloatType = f64;
 
+#[derive(Debug, Parser)]
+#[clap(author, about, version)]
+struct Args {
+    #[clap(short('c'), long("cfg"), value_name("config file"))]
+    station_cfg: String,
+
+    #[clap(
+        short('s'),
+        long("subdiv"),
+        value_name("divid fine channels into"),
+        default_value("2")
+    )]
+    subdiv: usize,
+
+    #[clap(
+        short('l'),
+        long("siglen"),
+        value_name("signal length in pt"),
+        default_value("65536")
+    )]
+    siglen: usize,
+
+    #[clap(short('t'), long("niter"), value_name("niter"), default_value("2"))]
+    niter: usize,
+
+    #[clap(short('o'), long("out"), value_name("output dir name"))]
+    outdir: String,
+
+    #[clap(short('A'), long("az0"), value_name("az0 in deg"))]
+    azimuth0: FloatType,
+
+    #[clap(short('Z'), long("zenith0"), value_name("ze0 in deg"))]
+    zenith0: FloatType,
+
+    #[clap(short('a'), long("az"), value_name("az in deg"))]
+    azimuth: FloatType,
+
+    #[clap(short('z'), long("zenith"), value_name("ze in deg"))]
+    zenith: FloatType,
+}
+
+fn main() {
+    let args = Args::parse();
     /*
     let station_cfg = StationCfg {
         pos: vec![[0., 0., 0.]],..
@@ -104,15 +71,10 @@ fn main() {
     }; */
 
     let station_cfg: StationCfg =
-        from_reader(std::fs::File::open(matches.value_of("station_cfg").unwrap()).unwrap())
-            .unwrap();
+        from_reader(std::fs::File::open(args.station_cfg).unwrap()).unwrap();
     let station = Station::<Complex<f64>, f64>::from_cfg(&station_cfg);
 
-    let subdiv = matches
-        .value_of("subdiv")
-        .unwrap()
-        .parse::<usize>()
-        .unwrap();
+    let subdiv = args.subdiv;
 
     let freq_to_sample = get_freq_to_sample(&station, subdiv);
 
@@ -123,40 +85,16 @@ fn main() {
 
     let nfreq = freq_to_sample.len();
 
-    let siglen = matches
-        .value_of("siglen")
-        .unwrap()
-        .parse::<usize>()
-        .unwrap();
-    let niter = matches.value_of("niter").unwrap().parse::<usize>().unwrap();
-    let out_dir = std::path::PathBuf::from(matches.value_of("outdir").unwrap());
+    let siglen = args.siglen;
+    let niter = args.niter;
+    let out_dir = std::path::PathBuf::from(args.outdir);
     create_dir_all(&out_dir).unwrap();
 
-    let az0 = matches
-        .value_of("azimuth0")
-        .unwrap()
-        .parse::<f64>()
-        .unwrap()
-        .to_radians();
-    let ze0 = matches
-        .value_of("zenith0")
-        .unwrap()
-        .parse::<f64>()
-        .unwrap()
-        .to_radians();
+    let az0 = args.azimuth0.to_radians();
+    let ze0 = args.zenith0.to_radians();
 
-    let az = matches
-        .value_of("azimuth")
-        .unwrap()
-        .parse::<f64>()
-        .unwrap()
-        .to_radians();
-    let ze = matches
-        .value_of("zenith")
-        .unwrap()
-        .parse::<f64>()
-        .unwrap()
-        .to_radians();
+    let az = args.azimuth.to_radians();
+    let ze = args.zenith.to_radians();
 
     let mut coarse_resp = Array2::<f64>::zeros((station_cfg.coarse_pfb.nch, nfreq));
     let mut fine_resp = Array2::<f64>::zeros((station_cfg.total_nfine_ch(), nfreq));
